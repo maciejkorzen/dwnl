@@ -1,0 +1,10 @@
+To install Dwnl, just type:
+
+# make install
+
+To uninstall program:
+
+# make uninstall
+
+Makefile recognizes `prefix', `bindir' and `DESTDIR' variables, so You can
+easily create packages.

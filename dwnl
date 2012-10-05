@@ -1,0 +1,454 @@
+#!/usr/bin/perl -w
+#
+# $Id: dwnl,v 1.11 2003/02/08 19:57:41 eaquer Exp $
+#
+# Copyright (c) 2002 Maciej Korzeñ <eaquer@ceti.pl>
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+# OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+# HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+# LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+# OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+# SUCH DAMAGE.
+
+use Curses;
+use Term::ReadKey;
+
+$version = "0.3";
+$HOME = $ENV{'HOME'};
+# `current' says which item should be highlighted in menu.
+$current = 0;
+
+# Create ~/download if doesn't exist.
+if ( ! -d "$HOME/download" ) {
+	if ( ! mkdir ( $HOME . "/download", 0700) ) {
+		printf "Can't create ~/download.\n";
+		exit;
+	}
+}
+
+# Initialize curses.
+curs_start();
+
+# Save terminal dimensions in variables.
+getmaxyx($term_height, $term_width);
+$term_height--;
+$term_width--;
+
+# Prepare list of directories in ~/download + NEW.
+prepare_list();
+# Show prepared list.
+show_list();
+# Highlight entry selected by `current'.
+highlight();
+refresh;
+
+# Read key.
+while ($c = getch) {
+	# If key sequence begins with escape char, then this is probably an
+	# arrow or something like that...
+	if ( "$c" eq "\e" ) {
+		make_move();
+	} elsif ( "$c" eq "\n" ) {
+	# If [Enter] was pressed...
+		# `maxcurrent' is maximal index number of `list'.
+		# `list' is array storing menu entries.
+		if ( $current == $maxcurrent ) {
+			# If NEW was selected...
+			add_entry();
+			$current = 0;
+		} else {
+			# If normal entry was selected...
+			# Save it's name in `actual'.
+			$actual = $list[$current];
+			$current_org = $current;
+			manage();
+			$current = $current_org;
+		}
+	} elsif ( "$c" eq "q" ) {
+	# If [Q] was pressed, then exit from program.
+		curs_stop();
+		exit;
+	}
+	# Make sure, that value of `current' is between 0 and `maxcurrent'.
+	current(0);
+	clear;
+	prepare_list();
+	show_list();
+	highlight();
+	refresh;
+}
+
+sub manage() {
+	my $c;
+	my $url;
+
+	$current = 0;
+	clear;
+	prepare_manage_list();
+	show_manage_list();
+	highlight();
+	refresh();
+
+	while ($c = getch) {
+	        if ( "$c" eq "\e" ) {
+        	        make_move();
+	        } elsif ( "$c" eq "\n" ) {
+			# Fetch file.
+			if ( $current == 0 ) {
+				curs_stop();
+				open(URL, "<" . $HOME . "/download/" . $actual . "/.address");
+				$url = <URL>;
+				close(URL);
+				chomp($url);
+				system("wget -P " . $HOME . "/download/" . $actual . " -vc '" . $url . "'");
+				system("echo \"\n\nPress [Enter].\"");
+				getc();
+				curs_start();
+			} elsif ( $current == 1 ) {
+				show_address();
+			} elsif ( $current == 2 ) {
+				change_address();
+			} elsif ( $current == 3 ) {
+				delete_file();
+			} elsif ( $current == 4 ) {
+				delete_entry();
+				# If entry was deleted, ...
+				if ( ! -d $HOME . "/download/" . $actual ) {
+					$current = 0;
+					return;
+				}
+			}
+	        } elsif ( "$c" eq "q" ) {
+			return;
+	        }
+	        current(0);
+	        clear;
+	        prepare_manage_list();
+	        show_manage_list();
+	        highlight();
+	        refresh;
+	}
+}
+
+# Show prepared list.
+sub show_list {
+	my $i = 0;
+
+	while ( $i <= $maxcurrent ) {
+		addstr($i + 1, 1, $list[$i]);
+		$i++;
+	}
+}
+
+# Show manage list ;-).
+sub show_manage_list {
+	show_list();
+	addstr(0, 0, "Select action for " . $actual . ":");
+}
+
+# Highlight entry pointed by `current'.
+sub highlight {
+	# Turn on reverse.
+	attron(A_REVERSE);
+	addstr($current + 1, 1, $list[$current] );
+	# Turn off reverse.
+	attroff(A_REVERSE);
+	addstr($term_height, 0, "Dwnl " . $version);
+	addstr($term_height, $term_width, " ");
+}
+
+# Manipulate value of `current', and make sure that this value is between 0 and
+# `maxcurrent'.
+sub current {
+	$current += $_[0];
+	if ( $current < 0 ) {
+		$current = $maxcurrent;
+	}
+	if ( $current > $maxcurrent ) {
+		$current = 0;
+	}
+	if ( "$list[$current]" eq "" || !defined($list[$current])) {
+		if ( "$_[0]" < 0 ) {
+			current(-1);
+		} else {
+			current(1);
+		}
+	}
+}
+
+# Prepare list of directories in ~/download.
+sub prepare_entry_list {
+	my @list_org;
+	my $i = 0;
+	my $j = 0;
+	@list_org = glob($HOME . "/download/*");
+
+	# List only directories from ~/download.
+	while (defined($list_org[$i])) {
+		if ( -d "$list_org[$i]" ) {
+			$list[$j] = $list_org[$i];
+			$j++;
+		}
+		$i++;
+	}
+
+	# Calculate `maxcurrent'.
+	$maxcurrent = 0;
+	while ($maxcurrent < $j) {
+		$list[$maxcurrent] =~ s,.*/,,;
+		$maxcurrent++;
+	}
+	$maxcurrent--;
+}
+
+# Prepare main list.
+sub prepare_list {
+	prepare_entry_list();
+
+	$maxcurrent += 1;
+
+	$list[$maxcurrent] = "NEW";
+}
+
+# Prepare manage list ;-).
+sub prepare_manage_list {
+	$list[0] = "Fetch";
+	$list[1] = "Show address";
+	$list[2] = "Change address";
+	$list[3] = "Remove downloaded file";
+	$list[4] = "Delete entry";
+
+	$maxcurrent = 4;
+}
+
+# Initialize curses.
+sub curs_start {
+	initscr;
+	# Turn off echo.
+	noecho;
+}
+
+sub curs_stop {
+	# Turn on echo.
+	echo;
+	clear;
+	refresh;
+	endwin;
+}
+
+# Change address for entry.
+sub change_address {
+	my $new_location;
+
+	clear;
+        addstr(1, 1, "Enter new location for " . $actual . ": ");
+	refresh;
+	$new_location = read_input();
+        if ( "$new_location" eq "" ) {
+                return;
+        }
+	if ( validate_url($new_location) == 1 ) {
+		return;
+	}
+        open(ADDRESS, ">" . $HOME . "/download/" . $actual . "/.address");
+        print ADDRESS $new_location;
+        close(ADDRESS);
+}
+
+# Delete given entry.
+sub delete_entry {
+	my $answer;
+
+        clear;
+	refresh;
+	addstr(1, 1, "Are You sure to remove entry " . $actual . "?");
+	addstr(2, 1, "(y/n) ");
+        $answer = read_input();
+	if ( "$answer" eq "y" ) {
+		system("rm -rf " . $HOME . "/download/" . $actual);
+	}
+	return;
+}
+
+# Delete downloaded file.
+sub delete_file {
+	my $answer;
+	my $file;
+
+        clear;
+	refresh;
+	# Read url, ...
+	open(ADDRESS, "<" . $HOME . "/download/" . $actual . "/.address");
+	$file = <ADDRESS>;
+	close(ADDRESS);
+	chomp($file);
+	# ..., and read file name from that url.
+	$file = get_file_from_url($file);
+	addstr(1, 1, "Are You sure to remove file " . $file . "?");
+	addstr(2, 1, "(y/n) ");
+        $answer = read_input();
+	if ( "$answer" eq "y" ) {
+		unlink($HOME . "/download/" . $actual . "/" . $file);
+	}
+	return;
+}
+
+# Show address for entry.
+sub show_address {
+	my $address;
+
+        clear;
+	refresh;
+	open(ADDRESS, "<" . $HOME . "/download/" . $actual . "/.address");
+	$address = <ADDRESS>;
+	close(ADDRESS);
+	chomp($address);
+	addstr(1, 1, $actual . "'s address is:");
+	addstr(2, 1, $address);
+	addstr(4, 1, "Press [Enter].");
+	read_enter().
+	return;
+}
+
+# Read escape sequence.
+sub read_esc {
+        my $char;
+	my $key;
+        $key = "";
+        while (defined($char = ReadKey(-1))) {
+                $key = $key . $char;
+        }
+        sprintf $key;
+}
+
+# Move between elements in menu.
+sub make_move {
+	my $c;
+
+	$c = read_esc();
+
+	if ( "$c" eq "[A" ) {
+		current(-1);
+	} elsif ( "$c" eq "[B" ) {
+		current(1);
+	} elsif ( "$c" eq "[H" ) {
+		$current = 0;
+	} elsif ( "$c" eq "[F" ) {
+		$current = $maxcurrent;
+	}
+}
+
+# Add new entry.
+sub add_entry {
+	clear;
+	addstr(1, 1, "Enter location for new entry: ");
+	refresh;
+	$new_location = read_input();
+	if ( "$new_location" eq "" ) {
+		return;
+	}
+        if ( validate_url($new_location) == 1 ) {
+                return;
+        }
+	$new_name = get_file_from_url($new_location);
+	if ( does_entry_exist($new_name) ) {
+		clear;
+		addstr(1, 1, "Entry named " . $new_name . " already exist.");
+		addstr(2, 1, "Press [Enter].");
+		refresh;
+		read_enter();
+		return;
+	}
+	mkdir $HOME . "/download/" . $new_name, 0700;
+	open(ADDRESS, ">" . $HOME . "/download/" . $new_name . "/.address");
+	print ADDRESS $new_location;
+	close(ADDRESS);
+	return;
+}
+
+# Check if given entry already exist.
+sub does_entry_exist {
+	my $i = 0;
+
+	prepare_entry_list();
+
+	while ( defined($list[$i]) ) {
+		if ( "$list[$i]" eq "$_[0]" ) {
+			return 1;
+		}
+		$i++;
+	}
+
+	prepare_list();
+	return 0;
+}
+
+# Extract filename from url.
+sub get_file_from_url {
+        @array = split(/\//, $_[0]);
+        sprintf($array[@array - 1]);
+}
+
+# Wait until [Enter] is pressed.
+sub read_enter {
+	my $nothing;
+
+        getstr($nothing);
+}
+
+# Reads input and removes unneeded spaces.
+sub read_input {
+	my $input;
+
+	echo;
+        getstr($input);
+	noecho;
+	chomp($input);
+	# Remove spaces from beginning and end of input.
+	$input =~ s/^ +//g;
+	$input =~ s/ +$//g;
+	sprintf($input);
+}
+
+# Check if given string contains only good chars.
+sub validate_url {
+	if ( $_[0] =~ /^[a-zA-Z0-9:\/ .~\-_+,=\?]+$/ ) {
+		return 0;
+	} else {
+		clear;
+		addstr(1, 1, "Input contains invalid characters.");
+		addstr(2, 1, "Press [Enter].");
+		refresh;
+		read_enter();
+		return 1;
+	}
+}
+
+sub validate_label {
+	if ( $_[0] =~ /^[a-zA-Z0-9 .\-_,]+$/ ) {
+		return 0;
+	} else {
+		clear;
+		addstr(1, 1, "Input contains invalid characters.");
+		addstr(2, 1, "Press [Enter].");
+		refresh;
+		read_enter();
+		return 1;
+	}
+}

@@ -1,0 +1,19 @@
+
+	Dwnl by Maciej Korzeñ <eaquer@ceti.pl>
+	http://ceti.pl/eaquer/dwnl/
+
+Dwnl is fast, small and user-friendly download manager for console. It allows
+You to manage multiple downloads. You will find it useful if You are using
+modem connection.
+
+Dwnl is written using Perl, to use it You must have installed:
+ - wget,
+ - Curses module for Perl,
+ - Term::ReadKey Perl module.
+On FreeBSD You can use ports to install mentioned software (/usr/ports/ftp/wget,
+/usr/ports/devel/p5-Curses and /usr/ports/devel/p5-Term-ReadKey).
+
+To add new entry just select `NEW' and type in URL. To go back to previous menu,
+just press [Q]. To stop downloading of a file hit [Ctrl]+[C] (and [Enter]).
+
+If You have any suggestions - mail me.
