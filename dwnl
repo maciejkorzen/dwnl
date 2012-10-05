@@ -1,8 +1,6 @@
 #!/usr/bin/perl -w
 #
-# $Id: dwnl,v 1.11 2003/02/08 19:57:41 eaquer Exp $
-#
-# Copyright (c) 2002 Maciej Korzeñ <eaquer@ceti.pl>
+# Copyright (c) 2002 Maciej Korzen <maciek@korzen.org>
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
